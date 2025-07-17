@@ -39,11 +39,6 @@ if uploaded_file:
             top_emotion = random.choice(EMOTIONS)
             confidence = round(random.uniform(60, 95), 1)
 
-        st.subheader("🎯 Emotion Result")
-        st.markdown(f"### {top_emotion['emoji']} **{top_emotion['name']}**")
-        st.progress(confidence / 100)
-        st.write(f"Confidence Score: **{confidence}%**")
-
         # Show emotion result
         st.subheader("🎯 Emotion Result")
         st.markdown(f"### {top_emotion['emoji']} **{top_emotion['name']}**")
@@ -51,7 +46,7 @@ if uploaded_file:
         # Gauge chart using Plotly
         fig = go.Figure(go.Indicator(
             mode="gauge+number",
-            value=confidence,
+            value=confidence/100,
             domain={'x': [0, 1], 'y': [0, 1]},
             title={'text': "Confidence Level"},
             gauge={
