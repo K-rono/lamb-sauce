@@ -46,7 +46,7 @@ if uploaded_file:
         # Gauge chart using Plotly
         fig = go.Figure(go.Indicator(
             mode="gauge+number",
-            value=confidence,
+            value=confidence/100,
             domain={'x': [0, 1], 'y': [0, 1]},
             title={'text': "Confidence Level"},
             gauge={
