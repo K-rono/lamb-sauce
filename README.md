@@ -1,5 +1,7 @@
 # 🐶 Dog Bark Emotion Classifier (Prototype)
 
+![Python](https://img.shields.io/badge/python-3.12%20%7C%203.11-blue?logo=python&logoColor=white)
+
 A **Streamlit-based prototype web app** that analyzes dog barks to detect emotion, valence, and arousal over time.  
 Built for hackathon demo purposes using a public dataset from Barkopedia.
 
@@ -33,9 +35,21 @@ For each uploaded clip, the app displays:
 
 ---
 
+## ⚠️ **Important Compatibility Note**
+
+> This project was mainly developed and tested on **Windows** with **Python 3.12.0**
+>
+> ⚠ **On macOS**: TensorFlow has limited or no support for Python 3.12, and installation may fail due to missing prebuilt wheels.  
+>  
+> ✅ **Recommended**: Run this project on **Windows** (or Linux) strictly on Python 3.12.0
+>  
+> ❌ If you must use macOS, refer to TensorFlow's official documentation on software requirements but note it may still fail depending on your chip (Intel vs Apple Silicon).
+
+---
+
 ## ⚙️ **How it works**
 
-- Python **3.12**  
+- Python **3.12** (or **3.11** if on macOS as stated in Tensorflow official documentation (https://www.tensorflow.org/install/pip#macos_1))
 - Frontend & server: **Streamlit**
 - Deep learning: **Keras** (TensorFlow backend)
 - Audio processing: **librosa** (MFCC extraction)
@@ -80,6 +94,7 @@ GOOGLE_API_KEY = "your_gemini_api_key_here"
 
 ```
 
+  ## Run the app
 ```bash
 
 streamlit run index.py
