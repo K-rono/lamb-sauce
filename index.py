@@ -13,6 +13,11 @@ import tensorflow as tf
 from tensorflow import keras
 import os
 from sklearn.preprocessing import StandardScaler
+import matplotlib.pyplot as plt
+import seaborn as sns
+import pandas as pd
+import soundfile as sf
+
 
 st.title("🐶 Dog Bark Emotion Classifier (Prototype)")
 
@@ -288,6 +293,21 @@ def determine_emotion_from_text(arousal_text, valence_text):
 
 # Assuming the preprocess_audio_for_sequential_model function is also defined elsewhere
 # from the previous code cell.
+def split_audio_into_chunks(audio_path, chunk_duration_sec=2.0, sr=SR):
+    y, _ = librosa.load(audio_path, sr=sr)
+    total_duration = librosa.get_duration(y=y, sr=sr)
+    chunk_length = int(sr * chunk_duration_sec)
+    chunks = []
+
+    for start in range(0, len(y), chunk_length):
+        end = start + chunk_length
+        chunk = y[start:end]
+        if len(chunk) < chunk_length:
+            padding = np.zeros(chunk_length - len(chunk))
+            chunk = np.concatenate([chunk, padding])
+        chunks.append(chunk)
+
+    return chunks
 
 uploaded_file = st.file_uploader("Upload a dog bark (.wav) file", type=["wav"])
 scaler_sequential = joblib.load('scaler_sequential.pkl')
@@ -306,39 +326,109 @@ if uploaded_file:
     AROUSAL_CLASSES = ['Low', 'Medium', 'High']
     VALENCE_CLASSES = ['Negative', 'Neutral', 'Positive']
 
-    processed_features = preprocess_audio_for_sequential_model(tmp_path, scaler_sequential)
+    #processed_features = preprocess_audio_for_sequential_model(tmp_path, scaler_sequential)
+
+    chunked_audio = split_audio_into_chunks(tmp_path)
+
+    valence_scores = []
+    arousal_scores = []
+    emotion_labels = []
+
+    for chunk in chunked_audio:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as chunk_file:
+            sf.write(chunk_file.name, chunk, SR)
+            chunk_path = chunk_file.name
+
+        processed = preprocess_audio_for_sequential_model(chunk_path, scaler_sequential)
+
+        if os.path.exists(chunk_path):
+            os.remove(chunk_path)
+
+        if processed is not None:
+            arousal_pred = arousal_model.predict(processed)
+            valence_pred = valence_model.predict(processed)
+
+            arousal_idx = np.argmax(arousal_pred)
+            valence_idx = np.argmax(valence_pred)
+
+            arousal_text = AROUSAL_CLASSES[arousal_idx]
+            valence_text = VALENCE_CLASSES[valence_idx]
+            emotion_text = determine_emotion_from_text(arousal_text, valence_text)
+
+            # Display result
+            st.success(f"📈 Predicted Arousal: **{arousal_text}**")
+            st.success(f"📉 Predicted Valence: **{valence_text}**")
+            st.success(f"🐶 Predicted Emotion: **{emotion_text}**")
+
+            arousal_scores.append(arousal_idx)
+            valence_scores.append(valence_idx)
+            emotion_labels.append(emotion_text)
+
+
+        
+        if emotion_labels:
+            st.subheader("📊 Emotion Over Time")
+
+            df = pd.DataFrame({
+                # "Chunk": list(range(1, len(chunked_audio)+1)),
+                #"Chunk": list(range(1, len(valence_scores)+1)),
+                "Chunk": list(range(len(valence_scores))), 
+                "Valence": valence_scores,
+                "Arousal": arousal_scores
+            })
+            st.line_chart(df.set_index("Chunk"))
+
+            st.subheader("🌈 Emotion Over Time (Area Chart)")
+            st.area_chart(df.set_index("Chunk"))
+
+
+            # color_map = {
+            #     "Excited": "gold", "Aggressive": "red", "Whining": "orange",
+            #     "Alert": "deepskyblue", "Sigh": "lightgrey", "Playful": "violet",
+            #     "Neutral": "gray", "Frustrated": "darkorange", "Happy": "green"
+            # }
+            # fig, ax = plt.subplots(figsize=(10, 1))
+            # for i, mood in enumerate(emotion_labels):
+            #     ax.barh(0, 1, left=i, color=color_map.get(mood, "black"))
+            # ax.set_xlim(0, len(emotion_labels))
+            # ax.set_yticks([])
+            # ax.set_xticks(range(len(emotion_labels)))
+            # ax.set_xticklabels([f"C{i+1}" for i in range(len(emotion_labels))], rotation=45)
+            # ax.set_title("Detected Emotions Across Audio Chunks")
+            # st.pyplot(fig)
+
 
     # Clean up the temporary file
     os.remove(tmp_path)
 
-    if processed_features is not None:
-        try:
-            # Predict using the Arousal and Valence models
-            arousal_predictions_onehot = arousal_model.predict(processed_features)
-            valence_predictions_onehot = valence_model.predict(processed_features)
+    # if processed_features is not None:
+    #     try:
+    #         # Predict using the Arousal and Valence models
+    #         arousal_predictions_onehot = arousal_model.predict(processed_features)
+    #         valence_predictions_onehot = valence_model.predict(processed_features)
 
-            # Get the predicted class index (argmax)
-            arousal_pred_encoded = np.argmax(arousal_predictions_onehot, axis=1)[0]
-            valence_pred_encoded = np.argmax(valence_predictions_onehot, axis=1)[0]
+    #         # Get the predicted class index (argmax)
+    #         arousal_pred_encoded = np.argmax(arousal_predictions_onehot, axis=1)[0]
+    #         valence_pred_encoded = np.argmax(valence_predictions_onehot, axis=1)[0]
 
-            # Convert predicted indices back to text labels
-            arousal_pred_text = AROUSAL_CLASSES[arousal_pred_encoded]
-            valence_pred_text = VALENCE_CLASSES[valence_pred_encoded]
+    #         # Convert predicted indices back to text labels
+    #         arousal_pred_text = AROUSAL_CLASSES[arousal_pred_encoded]
+    #         valence_pred_text = VALENCE_CLASSES[valence_pred_encoded]
 
-            # Determine the combined emotion label
-            predicted_combined_emotion = determine_emotion_from_text(arousal_pred_text, valence_pred_text)
+    #         # Determine the combined emotion label
+    #         predicted_combined_emotion = determine_emotion_from_text(arousal_pred_text, valence_pred_text)
 
-            # Display result
-            st.success(f"📈 Predicted Arousal: **{arousal_pred_text}**")
-            st.success(f"📉 Predicted Valence: **{valence_pred_text}**")
-            st.success(f"🐶 Predicted Emotion: **{predicted_combined_emotion}**")
+    #         # Display result
+    #         st.success(f"📈 Predicted Arousal: **{arousal_pred_text}**")
+    #         st.success(f"📉 Predicted Valence: **{valence_pred_text}**")
+    #         st.success(f"🐶 Predicted Emotion: **{predicted_combined_emotion}**")
 
-        except Exception as e:
-            st.error(f"An error occurred during prediction: {e}")
+    #     except Exception as e:
+    #         st.error(f"An error occurred during prediction: {e}")
 
-    else:
-        st.error("Audio preprocessing failed. Cannot predict.")
-
+    # else:
+    #     st.error("Audio preprocessing failed. Cannot predict.")
+    
 else:
     st.info("Please upload a .wav file to get prediction.")
 
@@ -357,3 +447,76 @@ else:
 # else:
 #     st.info("Please upload a .wav file to see the demo.")
 
+# def split_audio_into_chunks(audio_path, chunk_duration_sec=2.0, sr=SR):
+#     y, _ = librosa.load(audio_path, sr=sr)
+#     total_duration = librosa.get_duration(y=y, sr=sr)
+#     chunk_length = int(sr * chunk_duration_sec)
+#     chunks = []
+
+#     for start in range(0, len(y), chunk_length):
+#         end = start + chunk_length
+#         chunk = y[start:end]
+#         if len(chunk) < chunk_length:
+#             padding = np.zeros(chunk_length - len(chunk))
+#             chunk = np.concatenate([chunk, padding])
+#         chunks.append(chunk)
+
+#     return chunks
+
+# chunked_audio = split_audio_into_chunks(tmp_path)
+
+# valence_scores = []
+# arousal_scores = []
+# emotion_labels = []
+
+# for chunk in chunked_audio:
+#     # Save chunk to temp file
+#     with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as chunk_file:
+#         #librosa.output.write_wav(chunk_file.name, chunk, sr=SR)
+#         sf.write(chunk_file.name, chunk, SR)
+#         processed = preprocess_audio_for_sequential_model(chunk_file.name, scaler_sequential)
+#         os.remove(chunk_file.name)
+
+#     if processed is not None:
+#         arousal_pred = arousal_model.predict(processed)
+#         valence_pred = valence_model.predict(processed)
+
+#         arousal_idx = np.argmax(arousal_pred)
+#         valence_idx = np.argmax(valence_pred)
+
+#         arousal_text = AROUSAL_CLASSES[arousal_idx]
+#         valence_text = VALENCE_CLASSES[valence_idx]
+
+#         emotion_text = determine_emotion_from_text(arousal_text, valence_text)
+
+#         arousal_scores.append(arousal_idx - 1)   # Map High=2, Medium=1, Low=0 to +1, 0, -1
+#         valence_scores.append(valence_idx - 1)   # Same mapping
+#         emotion_labels.append(emotion_text)
+
+# st.subheader("📊 Emotion Over Time")
+
+# # Line charts
+# df = pd.DataFrame({
+#     "Chunk": list(range(1, len(chunked_audio)+1)),
+#     "Valence": valence_scores,
+#     "Arousal": arousal_scores
+# })
+# st.line_chart(df.set_index("Chunk"))
+
+# # Mood timeline bar
+# color_map = {
+#     "Excited": "gold", "Aggressive": "red", "Whining": "orange",
+#     "Alert": "deepskyblue", "Sigh": "lightgrey", "Playful": "violet",
+#     "Neutral": "gray", "Frustrated": "darkorange", "Happy": "green"
+# }
+# fig, ax = plt.subplots(figsize=(10, 1))
+# for i, mood in enumerate(emotion_labels):
+#     ax.barh(0, 1, left=i, color=color_map.get(mood, "black"))
+# ax.set_xlim(0, len(emotion_labels))
+# ax.set_yticks([])
+# ax.set_xticks(range(len(emotion_labels)))
+# ax.set_xticklabels([f"C{i+1}" for i in range(len(emotion_labels))], rotation=45)
+# ax.set_title("Detected Emotions Across Audio Chunks")
+# st.pyplot(fig)
+
+# os.remove(tmp_path)
