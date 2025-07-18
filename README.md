@@ -54,7 +54,7 @@ For each uploaded clip, the app displays:
 ### 🐍 Create and activate virtual environment
 ```bash
 # macOS example
-brew install python@3.12
+brew install python@3.11
 
 # Create & activate
 # Replace the following below with your actual python installation path
