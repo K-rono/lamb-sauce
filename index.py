@@ -1,5 +1,5 @@
 import streamlit as st
-from streamlit_webrtc import webrtc_streamer, WebRtcMode, AudioProcessorBase
+from streamlit_webrtc import webrtc_streamer, WebRtcMode, AudioProcessorBase # Kept, but real-time related code commented out
 import joblib
 import numpy as np
 import librosa
@@ -8,7 +8,7 @@ import av
 import queue
 import threading
 import time
-import audio_state
+import audio_state # Kept, but real-time related code commented out
 import tensorflow as tf
 from tensorflow import keras
 import os
@@ -17,7 +17,11 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
 import soundfile as sf
+import google.generativeai as genai # Import the Gemini library
+from collections import Counter # To find the most common emotion
 
+
+st.set_page_config(page_title="PawSound AI", layout="wide")
 
 st.title("🐶 Dog Bark Emotion Classifier (Prototype)")
 
@@ -33,7 +37,7 @@ st.title("🐶 Dog Bark Emotion Classifier (Prototype)")
 def load_lstm_model():
     return keras.models.load_model("final_emotion_model.keras") 
 
-model = load_lstm_model()
+# model = load_lstm_model() # This model is not used if you are using arousal/valence models
 
 @st.cache_resource
 def load_arousal_model():
@@ -47,6 +51,23 @@ def load_valence_model():
 
 valence_model = load_valence_model()
 
+@st.cache_resource
+def load_scaler_sequential():
+    # Ensure this path is correct for your scaler file
+    return joblib.load('scaler_sequential.pkl')
+
+scaler_sequential = load_scaler_sequential()
+
+# Define the parameters used for feature extraction and processing
+SR = 22050
+N_FFT = 2048
+HOP_LENGTH = 512
+N_MFCC = 1 # Crucial: Match the n_mfcc used for the sequential models
+SEQUENCE_LENGTH = 25 # Crucial: Match the sequence length used for the sequential models
+
+# Define Arousal and Valence Classes
+AROUSAL_CLASSES = ['Low', 'Medium', 'High']
+VALENCE_CLASSES = ['Negative', 'Neutral', 'Positive']
 
 #emotion_labels = ['Aggressive', 'Alert', 'Excited', 'Frustrated', 'Happy', 'Neutral', 'Playful', 'Sigh', 'Whining']
 
@@ -137,7 +158,119 @@ valence_model = load_valence_model()
 
 # # Show prediction result
 # st.subheader("Prediction Result:")
-# st.info(audio_state.current_prediction["label"])    
+# st.info(audio_state.current_prediction["label"])
+
+
+# Re-define the determine_emotion_from_text function for clarity
+def determine_emotion_from_text(arousal_text, valence_text):
+    """Determines emotion based on text arousal and valence labels."""
+    if arousal_text == 'Low':
+        if valence_text == 'Negative':
+            return 'Whining'
+        elif valence_text == 'Neutral':
+            return 'Sigh'
+        elif valence_text == 'Positive':
+            return 'Happy'
+    elif arousal_text == 'Medium':
+        if valence_text == 'Negative':
+            return 'Anxious' # Changed from 'Frustrated' to 'Anxious' for consistency with EMOTIONS list for Gemini
+        elif valence_text == 'Neutral':
+            return 'Alert'
+        elif valence_text == 'Positive':
+            return 'Playful'
+    elif arousal_text == 'High': # Explicitly handle High arousal
+        if valence_text == 'Negative':
+            return 'Aggressive'
+        elif valence_text == 'Neutral':
+            return 'Neutral'
+        elif valence_text == 'Positive':
+            return 'Excited' # Your prompt used 'Excited' for high arousal positive
+    return 'Unknown' # Should not happen with valid inputs
+
+# --- Gemini API Configuration ---
+# Define the prompt for Gemini API
+gemini_prompt_template = """
+You are an AI assistant specializing in dog behavior and well-being, providing information for veterinarians.
+If the emotion is negative, Provide suggestions (In one short sentence) related to:
+-What could be the cause
+-What actions to soothe or calm the dog
+If the emotion is generally considered positive or neutral (e.g., Happy, Playful, Alert, Sigh, Excited, Neutral), you can indicate that the dog may not require immediate behavioral intervention and is likely suitable for standard veterinary examination or procedures, but still provide any relevant general well-being tips if appropriate.
+Do not give suggestions to go to the vet, because the user is most likely already a vet.
+
+Here is the Dog Emotion: {emotion}
+Please give your suggestions.
+
+The output should be like
+Emotion: <Insert emotion>
+Sentence of suggestion
+Format the output as a sentence that doesn't look too LLM generated.
+"""
+
+# Use st.cache_resource to load the Gemini model only once
+@st.cache_resource
+def load_gemini_model():
+    try:
+        GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]
+        genai.configure(api_key=GOOGLE_API_KEY)
+        model = genai.GenerativeModel('gemini-1.5-flash-latest')
+        st.success("Gemini API configured successfully.")
+        return model
+    except KeyError:
+        st.error("Gemini API Key not found in Streamlit secrets. Please add it to .streamlit/secrets.toml")
+        return None
+    except Exception as e:
+        st.error(f"Error initializing Gemini model: {e}")
+        return None
+
+gemini_model = load_gemini_model()
+
+# Function to Generate Gemini Suggestions
+def get_gemini_suggestions(predicted_emotion, model, prompt_template):
+    """
+    Generates suggestions from Gemini API based on the predicted emotion.
+    Args:
+        predicted_emotion (str): The predicted dog emotion (e.g., 'Whining', 'Happy').
+        model (genai.GenerativeModel): The initialized Gemini API model.
+        prompt_template (str): The template for the Gemini API prompt.
+    Returns:
+        str: Gemini suggestions, or an error message/standard message if API call fails
+             or the emotion is positive/neutral.
+    """
+    if not model:
+        return "Gemini model is not available to provide suggestions due to API key or initialization issues."
+
+    # Define your list of "negative" or "concerning" emotions
+    # Ensure these match the output of determine_emotion_from_text
+    # negative_emotions = ['Whining', 'Alert', 'Anxious', 'Aggressive', 'Frustrated', 'Unknown'] 
+    
+    # Check if the predicted_emotion is a valid one from your mapping
+    # This list includes all possible outputs from determine_emotion_from_text
+    # all_possible_emotions = ['Whining', 'Sigh', 'Happy', 'Anxious', 'Alert', 'Playful', 'Aggressive', 'Neutral', 'Excited', 'Unknown']
+
+    try:
+        prompt = prompt_template.format(emotion=predicted_emotion)
+        response = model.generate_content(prompt)
+        return response.text
+    except Exception as e:
+        return f"Error fetching suggestions from Gemini API: {e}"
+
+    # if predicted_emotion in all_possible_emotions:
+    #     if predicted_emotion in negative_emotions:
+    #         try:
+    #             prompt = prompt_template.format(emotion=predicted_emotion)
+    #             response = model.generate_content(prompt)
+    #             return response.text
+    #         except Exception as e:
+    #             return f"Error fetching suggestions from Gemini API: {e}"
+    #     else:
+    #         # For positive/neutral emotions, provide a simple message as per your prompt logic
+    #         return f"Based on the predicted emotion ('{predicted_emotion}'), the dog appears generally content and likely suitable for standard veterinary examination or procedures. " \
+    #                f"However, general well-being tips include ensuring regular exercise, a balanced diet, and positive reinforcement."
+    # else:
+    #     return "Could not predict a recognized emotion, no specific suggestions available."
+
+# --- End Gemini API Configuration ---
+
 
 # file uploaded method start
 
@@ -148,34 +281,34 @@ valence_model = load_valence_model()
 #     return mfcc_mean.reshape(1, -1)  # Will return shape (1, 100)
 
 
-    # y, sr = librosa.load(file_path, sr=22050)
+#     # y, sr = librosa.load(file_path, sr=22050)
     
-    # # Get MFCC with 100 coefficients (shape: [n_mfcc, time_steps])
-    # mfcc = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=100)
+#     # # Get MFCC with 100 coefficients (shape: [n_mfcc, time_steps])
+#     # mfcc = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=100)
 
-    # # Transpose to shape: (time_steps, n_mfcc)
-    # mfcc = mfcc.T  # shape: (time_steps, 100)
+#     # # Transpose to shape: (time_steps, n_mfcc)
+#     # mfcc = mfcc.T  # shape: (time_steps, 100)
 
-    # # Optional: fix the time_steps dimension (e.g., pad or truncate to 128)
-    # desired_time_steps = 128
-    # if mfcc.shape[0] < desired_time_steps:
-    #     # Pad with zeros
-    #     pad_width = desired_time_steps - mfcc.shape[0]
-    #     mfcc = np.pad(mfcc, ((0, pad_width), (0, 0)), mode='constant')
-    # elif mfcc.shape[0] > desired_time_steps:
-    #     # Truncate
-    #     mfcc = mfcc[:desired_time_steps, :]
+#     # # Optional: fix the time_steps dimension (e.g., pad or truncate to 128)
+#     # desired_time_steps = 128
+#     # if mfcc.shape[0] < desired_time_steps:
+#     #     # Pad with zeros
+#     #     pad_width = desired_time_steps - mfcc.shape[0]
+#     #     mfcc = np.pad(mfcc, ((0, pad_width), (0, 0)), mode='constant')
+#     # elif mfcc.shape[0] > desired_time_steps:
+#     #     # Truncate
+#     #     mfcc = mfcc[:desired_time_steps, :]
 
-    # # Final shape: (1, time_steps, n_mfcc)
-    # return mfcc.reshape(1, desired_time_steps, 100)
+#     # # Final shape: (1, time_steps, n_mfcc)
+#     # return mfcc.reshape(1, desired_time_steps, 100)
 
 # Define the parameters used for feature extraction and processing in your training
 # Ensure these match the parameters used in cell 13a82ffa where X_sequential_scaled was created
-SR = 22050
-N_FFT = 2048
-HOP_LENGTH = 512
-N_MFCC = 1 # Crucial: Match the n_mfcc used for the sequential models
-SEQUENCE_LENGTH = 25 # Crucial: Match the sequence length used for the sequential models
+# SR = 22050 # Defined globally now
+# N_FFT = 2048 # Defined globally now
+# HOP_LENGTH = 512 # Defined globally now
+# N_MFCC = 1 # Crucial: Match the n_mfcc used for the sequential models # Defined globally now
+# SEQUENCE_LENGTH = 25 # Crucial: Match the sequence length used for the sequential models # Defined globally now
 
 # Assuming you have a fitted scaler for sequential data ('scaler_sequential')
 # You will need to load or fit this scaler on your training data in your Streamlit app
@@ -201,7 +334,7 @@ def preprocess_audio_for_sequential_model(audio_file_path, scaler):
 
         # Extract MFCCs over time (using n_mfcc=1)
         mfccs = librosa.feature.mfcc(y=y, sr=SR, n_mfcc=N_MFCC,
-                                    n_fft=N_FFT, hop_length=HOP_LENGTH)
+                                     n_fft=N_FFT, hop_length=HOP_LENGTH)
 
         # Transpose MFCCs to be (timesteps, features) -> (timesteps, 1) since n_mfcc is 1
         mfccs = mfccs.T # Shape will be (timesteps, 1)
@@ -237,10 +370,10 @@ def preprocess_audio_for_sequential_model(audio_file_path, scaler):
         return input_data_tf
 
     except FileNotFoundError:
-        print(f"Error: Audio file not found at {audio_file_path}")
+        st.error(f"Error: Audio file not found at {audio_file_path}")
         return None
     except Exception as e:
-        print(f"Error processing audio file {audio_file_path}: {str(e)}")
+        st.error(f"Error processing audio file {audio_file_path}: {str(e)}")
         return None
 
 # Example usage (assuming you have a sample audio file path and a fitted scaler)
@@ -265,32 +398,6 @@ def preprocess_audio_for_sequential_model(audio_file_path, scaler):
 # VALENCE_CLASSES = ['Negative', 'Neutral', 'Positive'] # Define these
 # determine_emotion_from_text function (as defined previously)
 
-# Re-define the determine_emotion_from_text function for clarity in this snippet
-def determine_emotion_from_text(arousal_text, valence_text):
-    """Determines emotion based on text arousal and valence labels."""
-    if arousal_text == 'Low':
-        if valence_text == 'Negative':
-            return 'Whining'
-        elif valence_text == 'Neutral':
-            return 'Sigh'
-        elif valence_text == 'Positive':
-            return 'Happy'
-    elif arousal_text == 'Medium':
-        if valence_text == 'Negative':
-            return 'Frustrated'
-        elif valence_text == 'Neutral':
-            return 'Alert'
-        elif valence_text == 'Positive':
-            return 'Playful'
-    elif valence_text == 'Negative': # Assuming High arousal negative is Aggressive
-        return 'Aggressive'
-    elif valence_text == 'Neutral': # Assuming High arousal neutral is Neutral
-        return 'Neutral'
-    elif valence_text == 'Positive': # Assuming High arousal positive is Excited
-        return 'Excited'
-    else:
-        return 'Unknown' # Should not happen with valid inputs
-
 # Assuming the preprocess_audio_for_sequential_model function is also defined elsewhere
 # from the previous code cell.
 def split_audio_into_chunks(audio_path, chunk_duration_sec=2.0, sr=SR):
@@ -310,7 +417,7 @@ def split_audio_into_chunks(audio_path, chunk_duration_sec=2.0, sr=SR):
     return chunks
 
 uploaded_file = st.file_uploader("Upload a dog bark (.wav) file", type=["wav"])
-scaler_sequential = joblib.load('scaler_sequential.pkl')
+# scaler_sequential = joblib.load('scaler_sequential.pkl') # Moved to @st.cache_resource
 
 if uploaded_file:
     st.audio(uploaded_file)
@@ -323,59 +430,68 @@ if uploaded_file:
     # --- Use the preprocess function for sequential models ---
     # IMPORTANT: Ensure arousal_model, valence_model, and scaler_sequential are loaded before this point
     # Also ensure preprocess_audio_for_sequential_model and determine_emotion_from_text are defined
-    AROUSAL_CLASSES = ['Low', 'Medium', 'High']
-    VALENCE_CLASSES = ['Negative', 'Neutral', 'Positive']
+    # AROUSAL_CLASSES = ['Low', 'Medium', 'High'] # Defined globally
+    # VALENCE_CLASSES = ['Negative', 'Neutral', 'Positive'] # Defined globally
 
     #processed_features = preprocess_audio_for_sequential_model(tmp_path, scaler_sequential)
 
     chunked_audio = split_audio_into_chunks(tmp_path)
 
-    valence_scores = []
-    arousal_scores = []
-    emotion_labels = []
+    valence_scores = [] # stores integer indices 0, 1, 2
+    arousal_scores = [] # stores integer indices 0, 1, 2
+    emotion_labels = [] # stores string labels like 'Happy', 'Whining'
 
-    for chunk in chunked_audio:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as chunk_file:
-            sf.write(chunk_file.name, chunk, SR)
-            chunk_path = chunk_file.name
+    with st.spinner("Analyzing audio chunks..."):
+        for i, chunk in enumerate(chunked_audio):
+            # Display progress (optional)
+            # st.text(f"Processing chunk {i+1}/{len(chunked_audio)}")
 
-        processed = preprocess_audio_for_sequential_model(chunk_path, scaler_sequential)
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as chunk_file:
+                sf.write(chunk_file.name, chunk, SR)
+                chunk_path = chunk_file.name
 
-        if os.path.exists(chunk_path):
-            os.remove(chunk_path)
+            processed = preprocess_audio_for_sequential_model(chunk_path, scaler_sequential)
 
-        if processed is not None:
-            arousal_pred = arousal_model.predict(processed)
-            valence_pred = valence_model.predict(processed)
+            if os.path.exists(chunk_path):
+                os.remove(chunk_path)
 
-            arousal_idx = np.argmax(arousal_pred)
-            valence_idx = np.argmax(valence_pred)
+            if processed is not None:
+                arousal_pred = arousal_model.predict(processed, verbose=0) # verbose=0 to suppress Keras output
+                valence_pred = valence_model.predict(processed, verbose=0)
 
-            arousal_text = AROUSAL_CLASSES[arousal_idx]
-            valence_text = VALENCE_CLASSES[valence_idx]
-            emotion_text = determine_emotion_from_text(arousal_text, valence_text)
+                arousal_idx = np.argmax(arousal_pred)
+                valence_idx = np.argmax(valence_pred)
 
-            # Display result
-            # st.success(f"📈 Predicted Arousal: **{arousal_text}**")
-            # st.success(f"📉 Predicted Valence: **{valence_text}**")
-            # st.success(f"🐶 Predicted Emotion: **{emotion_text}**")
+                arousal_text = AROUSAL_CLASSES[arousal_idx]
+                valence_text = VALENCE_CLASSES[valence_idx]
+                emotion_text = determine_emotion_from_text(arousal_text, valence_text)
+                
+                arousal_scores.append(arousal_idx)
+                valence_scores.append(valence_idx)
+                emotion_labels.append(emotion_text)
+            else:
+                st.warning(f"Skipping chunk {i+1} due to preprocessing error.")
+                # Append a placeholder or skip if processing failed for a chunk
+                emotion_labels.append("Processing Error") # Or 'Unknown', 'N/A' etc.
 
-            arousal_scores.append(arousal_idx)
-            valence_scores.append(valence_idx)
-            emotion_labels.append(emotion_text)
+
+    # Clean up the temporary file
+    os.remove(tmp_path)
 
     if emotion_labels:
+        # Create DataFrame for tabular display
         results_df = pd.DataFrame({
             #"Chunk": list(range(len(emotion_labels))),
             "Time Range": [f"{i*2}–{(i+1)*2} sec" for i in range(len(emotion_labels))],
-            "Arousal": [AROUSAL_CLASSES[val] for val in arousal_scores], 
-            "Valence": [VALENCE_CLASSES[val] for val in valence_scores],
+            "Arousal": [AROUSAL_CLASSES[val] if isinstance(val, int) else val for val in arousal_scores], 
+            "Valence": [VALENCE_CLASSES[val] if isinstance(val, int) else val for val in valence_scores],
             "Emotion": emotion_labels
         })
         st.subheader("📋 Emotion prediction every 2 seconds")
         st.dataframe(results_df)
 
-        df = pd.DataFrame({
+        # Create DataFrame for charts (using integer indices for plotting)
+        df_chart = pd.DataFrame({
             # "Chunk": list(range(1, len(chunked_audio)+1)),
             #"Chunk": list(range(1, len(valence_scores)+1)),
             #"Chunk": list(range(len(valence_scores))), 
@@ -383,36 +499,52 @@ if uploaded_file:
             "Valence": valence_scores,
             "Arousal": arousal_scores
         })
-        df.set_index("Time Range", inplace=True)
+        df_chart.set_index("Time Range", inplace=True)
 
-        st.subheader("📊 Emotion Over Time")
-        st.line_chart(df)
+        st.subheader("📊 Emotion Over Time (Line Chart)")
+        st.line_chart(df_chart)
         st.caption("🔹 Arousal scale: 0 = Low, 1 = Medium, 2 = High")
         st.caption("🔹 Valence scale: 0 = Negative, 1 = Neutral, 2 = Positive")
 
         st.subheader("🌈 Emotion Over Time (Area Chart)")
-        st.area_chart(df)
+        st.area_chart(df_chart)
 
 
-            # color_map = {
-            #     "Excited": "gold", "Aggressive": "red", "Whining": "orange",
-            #     "Alert": "deepskyblue", "Sigh": "lightgrey", "Playful": "violet",
-            #     "Neutral": "gray", "Frustrated": "darkorange", "Happy": "green"
-            # }
-            # fig, ax = plt.subplots(figsize=(10, 1))
-            # for i, mood in enumerate(emotion_labels):
-            #     ax.barh(0, 1, left=i, color=color_map.get(mood, "black"))
-            # ax.set_xlim(0, len(emotion_labels))
-            # ax.set_yticks([])
-            # ax.set_xticks(range(len(emotion_labels)))
-            # ax.set_xticklabels([f"C{i+1}" for i in range(len(emotion_labels))], rotation=45)
-            # ax.set_title("Detected Emotions Across Audio Chunks")
-            # st.pyplot(fig)
+        #             # color_map = {
+        #             #     "Excited": "gold", "Aggressive": "red", "Whining": "orange",
+        #             #     "Alert": "deepskyblue", "Sigh": "lightgrey", "Playful": "violet",
+        #             #     "Neutral": "gray", "Frustrated": "darkorange", "Happy": "green"
+        #             # }
+        #             # fig, ax = plt.subplots(figsize=(10, 1))
+        #             # for i, mood in enumerate(emotion_labels):
+        #             #     ax.barh(0, 1, left=i, color=color_map.get(mood, "black"))
+        #             # ax.set_xlim(0, len(emotion_labels))
+        #             # ax.set_yticks([])
+        #             # ax.set_xticks(range(len(emotion_labels)))
+        #             # ax.set_xticklabels([f"C{i+1}" for i in range(len(emotion_labels))], rotation=45)
+        #             # ax.set_title("Detected Emotions Across Audio Chunks")
+        #             # st.pyplot(fig)
+
+        # --- Gemini AI Suggestions ---
+        st.subheader("💡 Gemini AI Suggestions")
+        if gemini_model:
+            # Determine the most frequent emotion across all chunks
+            # Exclude "Processing Error" from the count
+            filtered_emotions = [e for e in emotion_labels if e != "Processing Error"]
+            if filtered_emotions:
+                overall_emotion = Counter(filtered_emotions).most_common(1)[0][0]
+                with st.spinner(f"Generating AI suggestions for overall emotion: {overall_emotion}..."):
+                    suggestions = get_gemini_suggestions(overall_emotion, gemini_model, gemini_prompt_template)
+                st.info(suggestions)
+            else:
+                st.warning("No valid emotions were detected to generate suggestions.")
+        else:
+            st.warning("Gemini AI suggestions are not available because the model could not be loaded. Please check your API key.")
 
 
-    # Clean up the temporary file
-    os.remove(tmp_path)
-
+    else:
+        st.error("No emotion predictions could be generated for the uploaded file.")
+    
     # if processed_features is not None:
     #     try:
     #         # Predict using the Arousal and Valence models
