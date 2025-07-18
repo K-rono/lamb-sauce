@@ -57,8 +57,12 @@ For each uploaded clip, the app displays:
 brew install python@3.12
 
 # Create & activate
+# Replace the following below with your actual python installation path
 /opt/homebrew/bin/python3.12 -m venv venv
 source venv/bin/activate
+
+#OR On Windows
+venv/Scripts/activate
 
 ```
   ## Install dependencies
