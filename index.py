@@ -1,45 +1,40 @@
 import streamlit as st
-from streamlit_webrtc import webrtc_streamer, WebRtcMode, AudioProcessorBase # Kept, but real-time related code commented out
 import joblib
 import numpy as np
 import librosa
 import tempfile
-import av
-import queue
-import threading
-import time
-import audio_state # Kept, but real-time related code commented out
 import tensorflow as tf
 from tensorflow import keras
 import os
-from sklearn.preprocessing import StandardScaler
-import matplotlib.pyplot as plt
-import seaborn as sns
 import pandas as pd
 import soundfile as sf
 import google.generativeai as genai # Import the Gemini library
 from collections import Counter # To find the most common emotion
 import plotly.express as px
 import plotly.graph_objects as go
+from PIL import Image, ImageOps
 
+emotion_images = {
+    "Alert": "images/alert.jpg",
+    "Sigh": "images/sigh.jpg",
+    "Happy": "images/happy.jpg",
+    "Aggressive": "images/aggressive.jpg",
+    "Playful": "images/playful.jpg",
+    "Whining": "images/whining.jpg",
+    "Frustrated": "images/frustrated.jpg",
+    "Neutral": "images/neutral.jpg",
+    "Excited": "images/excited.jpg"
+}
+
+def load_cropped_image(path, size=(250, 250)):
+    img = Image.open(path)
+    cropped_img = ImageOps.fit(img, size, method=Image.LANCZOS, centering=(0.5, 0.5))
+    return cropped_img
 
 st.set_page_config(page_title="PawSound AI", layout="wide")
-
 st.title("🐶 Dog Bark Emotion Classifier (Prototype)")
 
-# # Load random forest model
-# @st.cache_resource
-# def load_model():
-#     return joblib.load("dog_emotion_model.pkl")  # Load your model
 
-# model = load_model()
-
-# Load LSTM model
-@st.cache_resource
-def load_lstm_model():
-    return keras.models.load_model("final_emotion_model.keras") 
-
-# model = load_lstm_model() # This model is not used if you are using arousal/valence models
 
 @st.cache_resource
 def load_arousal_model():
@@ -71,97 +66,6 @@ SEQUENCE_LENGTH = 25 # Crucial: Match the sequence length used for the sequentia
 AROUSAL_CLASSES = ['Low', 'Medium', 'High']
 VALENCE_CLASSES = ['Negative', 'Neutral', 'Positive']
 
-#emotion_labels = ['Aggressive', 'Alert', 'Excited', 'Frustrated', 'Happy', 'Neutral', 'Playful', 'Sigh', 'Whining']
-
-
-# class AudioProcessor(AudioProcessorBase):
-#     def recv(self, frame: av.AudioFrame) -> av.AudioFrame:
-#         audio_data = frame.to_ndarray().flatten().astype(np.float32) / 32768.0
-#         audio_state.audio_buffer.put(audio_data)
-#         #print("Audio received:", audio_data.shape)
-#         return frame
-
-# def extract_realtime_features(audio_np):
-#     #Resample from 48kHz to 22.05kHz
-#     audio_resampled = librosa.resample(audio_np, orig_sr=48000, target_sr=22050)
-    
-#     #Extract MFCC
-#     mfcc = librosa.feature.mfcc(y=audio_resampled, sr=22050, n_mfcc=100)
-#     mfcc_mean = np.mean(mfcc.T, axis=0).reshape(1, -1)
-#     return mfcc_mean
-
-# def predict_loop():
-#     while True:
-#         time.sleep(2)  # Predict every 5 seconds
-#         audio_chunks = []
-
-#         while not audio_state.audio_buffer.empty():
-#             audio_chunks.append(audio_state.audio_buffer.get())
-            
-#         if len(audio_chunks) == 0:
-#             continue
-
-#         audio_np = np.concatenate(audio_chunks)
-#         try:
-#             features = extract_realtime_features(audio_np)
-#             prediction = model.predict(features)[0]
-#             predicted_label = emotion_labels[int(prediction)]
-#             audio_state.current_prediction["label"] = f"🐾 Detected Emotion: {predicted_label}"
-#         except Exception as e:
-#             audio_state.current_prediction["label"] = f"Error: {e}"
-
-# if "prediction_thread_started" not in st.session_state:
-#     threading.Thread(target=predict_loop, daemon=True).start()
-#     st.session_state.prediction_thread_started = True
-
-# webrtc_ctx = webrtc_streamer(
-#     key="dog-audio",
-#     mode=WebRtcMode.SENDRECV,
-#     audio_processor_factory=AudioProcessor,
-#     rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},
-#     media_stream_constraints={"video": False, "audio": True}
-# )
-
-# # if not audio_buffer.empty():
-# #     st.success(f"Buffer has {audio_buffer.qsize()} chunks")
-# # else:
-# #     st.warning("Buffer is empty. Speak into your mic to test.")
-
-# # prediction_display = st.empty()
-
-# # if webrtc_ctx.state.playing:
-# #     st.info("🎤 Listening and predicting every 5 seconds...")
-# #     threading.Thread(target=predict_loop, daemon=True).start()
-# #     while True:
-# #         prediction_display.info(current_prediction["label"])
-# #         time.sleep(1)  # Refresh UI every second
-# # else:
-# #     st.warning("Please start recording to begin prediction.")
-
-# # if webrtc_ctx.state.playing:
-# #     st.success("✅ Microphone is streaming.")
-
-# #     buf = audio_state.audio_buffer
-
-# #     if not buf.empty():
-# #         st.success(f"✅ Buffer has {buf.qsize()} chunks.")
-# #         audio_chunk = buf.get()
-# #         st.write("First 10 values:", audio_chunk[:10])
-# #         st.line_chart(audio_chunk[:500])
-# #     else:
-# #         st.warning("🔇 Buffer is still empty. Try speaking into the mic.")
-# # else:
-# #     st.info("Click Start above to begin recording.")
-
-# if webrtc_ctx.state.playing:
-#     st.success("🎤 Microphone is streaming. Listening...")
-# else:
-#     st.info("Click Start to begin recording.")
-
-# # Show prediction result
-# st.subheader("Prediction Result:")
-# st.info(audio_state.current_prediction["label"])
-
 
 # Re-define the determine_emotion_from_text function for clarity
 def determine_emotion_from_text(arousal_text, valence_text):
@@ -175,7 +79,7 @@ def determine_emotion_from_text(arousal_text, valence_text):
             return 'Happy'
     elif arousal_text == 'Medium':
         if valence_text == 'Negative':
-            return 'Anxious' # Changed from 'Frustrated' to 'Anxious' for consistency with EMOTIONS list for Gemini
+            return 'Frustrated' # Changed from 'Frustrated' to 'Anxious' for consistency with EMOTIONS list for Gemini
         elif valence_text == 'Neutral':
             return 'Alert'
         elif valence_text == 'Positive':
@@ -204,7 +108,7 @@ Please give your suggestions.
 
 The output should be like
 Emotion: <Insert emotion>
-<Leave a blank line here>
+
 Sentence of suggestion
 Format the output as a sentence that doesn't look too LLM generated.
 """
@@ -242,14 +146,6 @@ def get_gemini_suggestions(predicted_emotion, model, prompt_template):
     if not model:
         return "Gemini model is not available to provide suggestions due to API key or initialization issues."
 
-    # Define your list of "negative" or "concerning" emotions
-    # Ensure these match the output of determine_emotion_from_text
-    # negative_emotions = ['Whining', 'Alert', 'Anxious', 'Aggressive', 'Frustrated', 'Unknown'] 
-    
-    # Check if the predicted_emotion is a valid one from your mapping
-    # This list includes all possible outputs from determine_emotion_from_text
-    # all_possible_emotions = ['Whining', 'Sigh', 'Happy', 'Anxious', 'Alert', 'Playful', 'Aggressive', 'Neutral', 'Excited', 'Unknown']
-
     try:
         prompt = prompt_template.format(emotion=predicted_emotion)
         response = model.generate_content(prompt)
@@ -257,67 +153,11 @@ def get_gemini_suggestions(predicted_emotion, model, prompt_template):
     except Exception as e:
         return f"Error fetching suggestions from Gemini API: {e}"
 
-    # if predicted_emotion in all_possible_emotions:
-    #     if predicted_emotion in negative_emotions:
-    #         try:
-    #             prompt = prompt_template.format(emotion=predicted_emotion)
-    #             response = model.generate_content(prompt)
-    #             return response.text
-    #         except Exception as e:
-    #             return f"Error fetching suggestions from Gemini API: {e}"
-    #     else:
-    #         # For positive/neutral emotions, provide a simple message as per your prompt logic
-    #         return f"Based on the predicted emotion ('{predicted_emotion}'), the dog appears generally content and likely suitable for standard veterinary examination or procedures. " \
-    #                f"However, general well-being tips include ensuring regular exercise, a balanced diet, and positive reinforcement."
-    # else:
-    #     return "Could not predict a recognized emotion, no specific suggestions available."
 
 # --- End Gemini API Configuration ---
 
 
-# file uploaded method start
 
-# def extract_features(file_path): OLDDDDDDDDDDDDDDDDD
-#     y, sr = librosa.load(file_path, sr=22050)
-#     mfcc = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=100)
-#     mfcc_mean = np.mean(mfcc.T, axis=0)
-#     return mfcc_mean.reshape(1, -1)  # Will return shape (1, 100)
-
-
-#     # y, sr = librosa.load(file_path, sr=22050)
-    
-#     # # Get MFCC with 100 coefficients (shape: [n_mfcc, time_steps])
-#     # mfcc = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=100)
-
-#     # # Transpose to shape: (time_steps, n_mfcc)
-#     # mfcc = mfcc.T  # shape: (time_steps, 100)
-
-#     # # Optional: fix the time_steps dimension (e.g., pad or truncate to 128)
-#     # desired_time_steps = 128
-#     # if mfcc.shape[0] < desired_time_steps:
-#     #     # Pad with zeros
-#     #     pad_width = desired_time_steps - mfcc.shape[0]
-#     #     mfcc = np.pad(mfcc, ((0, pad_width), (0, 0)), mode='constant')
-#     # elif mfcc.shape[0] > desired_time_steps:
-#     #     # Truncate
-#     #     mfcc = mfcc[:desired_time_steps, :]
-
-#     # # Final shape: (1, time_steps, n_mfcc)
-#     # return mfcc.reshape(1, desired_time_steps, 100)
-
-# Define the parameters used for feature extraction and processing in your training
-# Ensure these match the parameters used in cell 13a82ffa where X_sequential_scaled was created
-# SR = 22050 # Defined globally now
-# N_FFT = 2048 # Defined globally now
-# HOP_LENGTH = 512 # Defined globally now
-# N_MFCC = 1 # Crucial: Match the n_mfcc used for the sequential models # Defined globally now
-# SEQUENCE_LENGTH = 25 # Crucial: Match the sequence length used for the sequential models # Defined globally now
-
-# Assuming you have a fitted scaler for sequential data ('scaler_sequential')
-# You will need to load or fit this scaler on your training data in your Streamlit app
-# For demonstration purposes here, we'll assume it's available or loaded.
-# In your Streamlit app, you'd typically load the fitted scaler like:
-# scaler_sequential = joblib.load('scaler_sequential.pkl') # Example using joblib
 
 def preprocess_audio_for_sequential_model(audio_file_path, scaler):
     """
@@ -379,27 +219,7 @@ def preprocess_audio_for_sequential_model(audio_file_path, scaler):
         st.error(f"Error processing audio file {audio_file_path}: {str(e)}")
         return None
 
-# Example usage (assuming you have a sample audio file path and a fitted scaler)
-# if 'combined_df' in locals() and len(combined_df) > 0 and 'scaler_sequential' in locals():
-#     sample_audio_path = combined_df['audio_path'].iloc[0]
-#     print(f"\nTesting preprocess function with: {sample_audio_path}")
-#     processed_input = preprocess_audio_for_sequential_model(sample_audio_path, scaler_sequential)
-#     if processed_input is not None:
-#         print("Preprocessing successful. Output shape:", processed_input.shape)
-#     else:
-#         print("Preprocessing failed.")
-# else:
-#     print("\nSkipping example usage: combined_df or scaler_sequential not found.")
 
-
-
-# Assuming these are loaded elsewhere in your Streamlit app:
-# arousal_model = tf.keras.models.load_model('path/to/your/arousal_model.keras')
-# valence_model = tf.keras.models.load_model('path/to/your/valence_model.keras')
-# scaler_sequential = joblib.load('path/to/your/scaler_sequential.pkl') # Load your fitted scaler
-# AROUSAL_CLASSES = ['Low', 'Medium', 'High'] # Define these
-# VALENCE_CLASSES = ['Negative', 'Neutral', 'Positive'] # Define these
-# determine_emotion_from_text function (as defined previously)
 
 # Assuming the preprocess_audio_for_sequential_model function is also defined elsewhere
 # from the previous code cell.
@@ -423,6 +243,7 @@ uploaded_file = st.file_uploader("Upload a dog bark (.wav) file", type=["wav"])
 # scaler_sequential = joblib.load('scaler_sequential.pkl') # Moved to @st.cache_resource
 
 if uploaded_file:
+    audio_data, sr = librosa.load(uploaded_file, sr=None)
     st.audio(uploaded_file)
 
     # Save the uploaded file to a temporary location
@@ -499,6 +320,56 @@ if uploaded_file:
     os.remove(tmp_path)
 
     if emotion_labels:
+        # Start with the first emotion as the first transition
+        transitions = [emotion_labels[0]] if emotion_labels else []
+
+        # Loop from second element onward and compare to the previous
+        for i in range(1, len(emotion_labels)):
+            if emotion_labels[i] != emotion_labels[i - 1]:
+                transitions.append(emotion_labels[i])
+
+        st.subheader("🔁 Emotion Transitions")
+        #st.write(" → ".join(transitions))
+        cols = st.columns(len(transitions) * 2 - 1)  # extra cols for arrows
+
+        for i, emotion in enumerate(transitions):
+            with cols[i * 2]:
+                img_path = emotion_images.get(emotion, "images/default.png")
+                cropped_img = load_cropped_image(img_path)
+                st.image(cropped_img, caption=emotion, use_container_width=False)
+            if i < len(transitions) - 1:
+                with cols[i * 2 + 1]:
+                    #st.markdown("→", unsafe_allow_html=True)
+                    st.markdown(
+                        """
+                        <div style="display: flex; justify-content: center; align-items: center; height: 100%;">
+                            <span style="font-size: 40px;">→</span>
+                        </div>
+                        """,
+                        unsafe_allow_html=True
+                    )
+
+
+
+        # --- Gemini AI Suggestions ---
+        st.subheader("💡 Gemini AI Suggestions")
+        if gemini_model:
+            # Determine the most frequent emotion across all chunks
+            # Exclude "Processing Error" from the count
+            filtered_emotions = [e for e in emotion_labels if e != "Processing Error"]
+            if filtered_emotions:
+                overall_emotion = Counter(filtered_emotions).most_common(1)[0][0]
+                with st.spinner(f"Generating AI suggestions for overall emotion: {overall_emotion}..."):
+                    suggestions = get_gemini_suggestions(overall_emotion, gemini_model, gemini_prompt_template)
+                st.info(suggestions)
+            else:
+                st.warning("No valid emotions were detected to generate suggestions.")
+        else:
+            st.warning("Gemini AI suggestions are not available because the model could not be loaded. Please check your API key.")
+
+
+
+
         # Create DataFrame for tabular display
         results_df = pd.DataFrame({
             #"Chunk": list(range(len(emotion_labels))),
@@ -537,6 +408,16 @@ if uploaded_file:
         )
 
         st.plotly_chart(fig, use_container_width=True)
+
+    
+
+
+
+
+
+        st.subheader("📈 Audio Waveform")
+        downsampled = audio_data[::int(sr/500)]  # Downsample for performance
+        st.line_chart(downsampled)
 
         #Confidence Scores
         ###############################################################################################################
@@ -583,21 +464,6 @@ if uploaded_file:
             st.plotly_chart(fig_valence, use_container_width=True)
 ###############################################################################################################
 
-
-        # --- Gemini AI Suggestions ---
-        st.subheader("💡 Gemini AI Suggestions")
-        if gemini_model:
-            # Determine the most frequent emotion across all chunks
-            # Exclude "Processing Error" from the count
-            filtered_emotions = [e for e in emotion_labels if e != "Processing Error"]
-            if filtered_emotions:
-                overall_emotion = Counter(filtered_emotions).most_common(1)[0][0]
-                with st.spinner(f"Generating AI suggestions for overall emotion: {overall_emotion}..."):
-                    suggestions = get_gemini_suggestions(overall_emotion, gemini_model, gemini_prompt_template)
-                st.info(suggestions)
-            else:
-                st.warning("No valid emotions were detected to generate suggestions.")
-        else:
-            st.warning("Gemini AI suggestions are not available because the model could not be loaded. Please check your API key.")
+    
 else:
     st.info("Please upload a .wav file to get prediction.")
