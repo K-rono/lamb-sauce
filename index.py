@@ -20,6 +20,7 @@ import soundfile as sf
 import google.generativeai as genai # Import the Gemini library
 from collections import Counter # To find the most common emotion
 import plotly.express as px
+import plotly.graph_objects as go
 
 
 st.set_page_config(page_title="PawSound AI", layout="wide")
@@ -442,6 +443,8 @@ if uploaded_file:
     valence_scores = [] # stores integer indices 0, 1, 2
     arousal_scores = [] # stores integer indices 0, 1, 2
     emotion_labels = [] # stores string labels like 'Happy', 'Whining'
+    arousal_confidences = []
+    valence_confidences = []
 
     with st.spinner("Analyzing audio chunks..."):
         for i, chunk in enumerate(chunked_audio):
@@ -464,6 +467,9 @@ if uploaded_file:
                 arousal_idx = np.argmax(arousal_pred)
                 valence_idx = np.argmax(valence_pred)
 
+                arousal_confidences.append(float(arousal_pred[0][arousal_idx]) * 100)
+                valence_confidences.append(float(valence_pred[0][valence_idx]) * 100)
+
                 arousal_text = AROUSAL_CLASSES[arousal_idx]
                 valence_text = VALENCE_CLASSES[valence_idx]
                 emotion_text = determine_emotion_from_text(arousal_text, valence_text)
@@ -471,10 +477,22 @@ if uploaded_file:
                 arousal_scores.append(arousal_idx - 1)
                 valence_scores.append(valence_idx - 1)
                 emotion_labels.append(emotion_text)
+
             else:
                 st.warning(f"Skipping chunk {i+1} due to preprocessing error.")
                 # Append a placeholder or skip if processing failed for a chunk
                 emotion_labels.append("Processing Error") # Or 'Unknown', 'N/A' etc.
+
+
+    if arousal_confidences:
+        arousal_confidence = np.mean(arousal_confidences)
+    else:
+        arousal_confidence = 0
+
+    if valence_confidences:
+        valence_confidence = np.mean(valence_confidences)
+    else:
+        valence_confidence = 0
 
 
     # Clean up the temporary file
@@ -491,27 +509,7 @@ if uploaded_file:
         })
         st.subheader("📋 Emotion prediction every 2 seconds")
         st.dataframe(results_df)
-
-        # Create DataFrame for charts (using integer indices for plotting)
-        # df_chart = pd.DataFrame({
-        #     # "Chunk": list(range(1, len(chunked_audio)+1)),
-        #     #"Chunk": list(range(1, len(valence_scores)+1)),
-        #     #"Chunk": list(range(len(valence_scores))), 
-        #     "Time Range": [f"{i*2}–{(i+1)*2}s" for i in range(len(valence_scores))],
-        #     "Valence": valence_scores,
-        #     "Arousal": arousal_scores
-        # })
-        # df_chart.set_index("Time Range", inplace=True)
-
-        # st.subheader("📊 Emotion Over Time (Line Chart)")
-        # st.line_chart(df_chart)
-        # st.caption("🔹 Arousal scale: 0 = Low, 1 = Medium, 2 = High")
-        # st.caption("🔹 Valence scale: 0 = Negative, 1 = Neutral, 2 = Positive")
-
-
-
-
-
+    
         st.subheader("📋 Emotion Changes Over Time")
         time_ranges = [f"{i*2}–{(i+1)*2}s" for i in range(len(emotion_labels))]
         emotions = emotion_labels
@@ -539,24 +537,52 @@ if uploaded_file:
         )
 
         st.plotly_chart(fig, use_container_width=True)
-        # st.subheader("🌈 Emotion Over Time (Area Chart)")
-        # st.area_chart(df_chart)
 
+        #Confidence Scores
+        ###############################################################################################################
+        st.subheader("📊 Model Confidence Gauges")
 
-        #             # color_map = {
-        #             #     "Excited": "gold", "Aggressive": "red", "Whining": "orange",
-        #             #     "Alert": "deepskyblue", "Sigh": "lightgrey", "Playful": "violet",
-        #             #     "Neutral": "gray", "Frustrated": "darkorange", "Happy": "green"
-        #             # }
-        #             # fig, ax = plt.subplots(figsize=(10, 1))
-        #             # for i, mood in enumerate(emotion_labels):
-        #             #     ax.barh(0, 1, left=i, color=color_map.get(mood, "black"))
-        #             # ax.set_xlim(0, len(emotion_labels))
-        #             # ax.set_yticks([])
-        #             # ax.set_xticks(range(len(emotion_labels)))
-        #             # ax.set_xticklabels([f"C{i+1}" for i in range(len(emotion_labels))], rotation=45)
-        #             # ax.set_title("Detected Emotions Across Audio Chunks")
-        #             # st.pyplot(fig)
+        # Create 2 or 3 columns for side-by-side layout
+        col1, col2 = st.columns(2)  # For 2 gauges
+        # col1, col2, col3 = st.columns(3)  # Uncomment for 3 gauges
+
+        with col1:
+            st.subheader("Arousal Confidence")
+            fig_arousal = go.Figure(go.Indicator(
+                mode="gauge+number",
+                value=arousal_confidence,   
+                title={'text': "Arousal"},
+                gauge={
+                    'axis': {'range': [0, 100]},
+                    'bar': {'color': "green"},
+                    'steps': [
+                        {'range': [0, 33], 'color': "lightgray"},
+                        {'range': [33, 66], 'color': "yellow"},
+                        {'range': [66, 100], 'color': "lightgreen"}
+                    ]
+                }
+            ))
+            st.plotly_chart(fig_arousal, use_container_width=True)
+
+        with col2:
+            st.subheader("Valence Confidence")
+            fig_valence = go.Figure(go.Indicator(
+                mode="gauge+number",
+                value=valence_confidence,
+                title={'text': "Valence"},
+                gauge={
+                    'axis': {'range': [0, 100]},
+                    'bar': {'color': "blue"},
+                    'steps': [
+                        {'range': [0, 33], 'color': "lightgray"},
+                        {'range': [33, 66], 'color': "skyblue"},
+                        {'range': [66, 100], 'color': "green"}
+                    ]
+                }
+            ))
+            st.plotly_chart(fig_valence, use_container_width=True)
+###############################################################################################################
+
 
         # --- Gemini AI Suggestions ---
         st.subheader("💡 Gemini AI Suggestions")
@@ -573,127 +599,5 @@ if uploaded_file:
                 st.warning("No valid emotions were detected to generate suggestions.")
         else:
             st.warning("Gemini AI suggestions are not available because the model could not be loaded. Please check your API key.")
-
-
-    else:
-        st.error("No emotion predictions could be generated for the uploaded file.")
-    
-    # if processed_features is not None:
-    #     try:
-    #         # Predict using the Arousal and Valence models
-    #         arousal_predictions_onehot = arousal_model.predict(processed_features)
-    #         valence_predictions_onehot = valence_model.predict(processed_features)
-
-    #         # Get the predicted class index (argmax)
-    #         arousal_pred_encoded = np.argmax(arousal_predictions_onehot, axis=1)[0]
-    #         valence_pred_encoded = np.argmax(valence_predictions_onehot, axis=1)[0]
-
-    #         # Convert predicted indices back to text labels
-    #         arousal_pred_text = AROUSAL_CLASSES[arousal_pred_encoded]
-    #         valence_pred_text = VALENCE_CLASSES[valence_pred_encoded]
-
-    #         # Determine the combined emotion label
-    #         predicted_combined_emotion = determine_emotion_from_text(arousal_pred_text, valence_pred_text)
-
-    #         # Display result
-    #         st.success(f"📈 Predicted Arousal: **{arousal_pred_text}**")
-    #         st.success(f"📉 Predicted Valence: **{valence_pred_text}**")
-    #         st.success(f"🐶 Predicted Emotion: **{predicted_combined_emotion}**")
-
-    #     except Exception as e:
-    #         st.error(f"An error occurred during prediction: {e}")
-
-    # else:
-    #     st.error("Audio preprocessing failed. Cannot predict.")
-    
 else:
     st.info("Please upload a .wav file to get prediction.")
-
-# file uploaded method end
-
-
-
-
-# if uploaded_file:
-#     # Show audio player
-#     st.audio(uploaded_file)
-
-#     # Dummy prediction
-#     st.info("This is a test prototype – no prediction logic yet.")
-#     st.success("🐶 Predicted emotion: **(placeholder)**")
-# else:
-#     st.info("Please upload a .wav file to see the demo.")
-
-# def split_audio_into_chunks(audio_path, chunk_duration_sec=2.0, sr=SR):
-#     y, _ = librosa.load(audio_path, sr=sr)
-#     total_duration = librosa.get_duration(y=y, sr=sr)
-#     chunk_length = int(sr * chunk_duration_sec)
-#     chunks = []
-
-#     for start in range(0, len(y), chunk_length):
-#         end = start + chunk_length
-#         chunk = y[start:end]
-#         if len(chunk) < chunk_length:
-#             padding = np.zeros(chunk_length - len(chunk))
-#             chunk = np.concatenate([chunk, padding])
-#         chunks.append(chunk)
-
-#     return chunks
-
-# chunked_audio = split_audio_into_chunks(tmp_path)
-
-# valence_scores = []
-# arousal_scores = []
-# emotion_labels = []
-
-# for chunk in chunked_audio:
-#     # Save chunk to temp file
-#     with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as chunk_file:
-#         #librosa.output.write_wav(chunk_file.name, chunk, sr=SR)
-#         sf.write(chunk_file.name, chunk, SR)
-#         processed = preprocess_audio_for_sequential_model(chunk_file.name, scaler_sequential)
-#         os.remove(chunk_file.name)
-
-#     if processed is not None:
-#         arousal_pred = arousal_model.predict(processed)
-#         valence_pred = valence_model.predict(processed)
-
-#         arousal_idx = np.argmax(arousal_pred)
-#         valence_idx = np.argmax(valence_pred)
-
-#         arousal_text = AROUSAL_CLASSES[arousal_idx]
-#         valence_text = VALENCE_CLASSES[valence_idx]
-
-#         emotion_text = determine_emotion_from_text(arousal_text, valence_text)
-
-#         arousal_scores.append(arousal_idx - 1)   # Map High=2, Medium=1, Low=0 to +1, 0, -1
-#         valence_scores.append(valence_idx - 1)   # Same mapping
-#         emotion_labels.append(emotion_text)
-
-# st.subheader("📊 Emotion Over Time")
-
-# # Line charts
-# df = pd.DataFrame({
-#     "Chunk": list(range(1, len(chunked_audio)+1)),
-#     "Valence": valence_scores,
-#     "Arousal": arousal_scores
-# })
-# st.line_chart(df.set_index("Chunk"))
-
-# # Mood timeline bar
-# color_map = {
-#     "Excited": "gold", "Aggressive": "red", "Whining": "orange",
-#     "Alert": "deepskyblue", "Sigh": "lightgrey", "Playful": "violet",
-#     "Neutral": "gray", "Frustrated": "darkorange", "Happy": "green"
-# }
-# fig, ax = plt.subplots(figsize=(10, 1))
-# for i, mood in enumerate(emotion_labels):
-#     ax.barh(0, 1, left=i, color=color_map.get(mood, "black"))
-# ax.set_xlim(0, len(emotion_labels))
-# ax.set_yticks([])
-# ax.set_xticks(range(len(emotion_labels)))
-# ax.set_xticklabels([f"C{i+1}" for i in range(len(emotion_labels))], rotation=45)
-# ax.set_title("Detected Emotions Across Audio Chunks")
-# st.pyplot(fig)
-
-# os.remove(tmp_path)
