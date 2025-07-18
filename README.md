@@ -68,11 +68,17 @@ pip install -r requirements.txt
 
 ```
   ## Setup Gemini API Key
-  Create a .streamlit/secrets.toml file in your project root:
+  Create a .streamlit/secrets.toml file in your project root (If you're running the project locally):
 ```bash
 
 # .streamlit/secrets.toml
 GOOGLE_API_KEY = "your_gemini_api_key_here"
+
+```
+
+```bash
+
+streamlit run index.py
 
 ```
 
