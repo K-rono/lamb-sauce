@@ -356,30 +356,42 @@ if uploaded_file:
             emotion_text = determine_emotion_from_text(arousal_text, valence_text)
 
             # Display result
-            st.success(f"📈 Predicted Arousal: **{arousal_text}**")
-            st.success(f"📉 Predicted Valence: **{valence_text}**")
-            st.success(f"🐶 Predicted Emotion: **{emotion_text}**")
+            # st.success(f"📈 Predicted Arousal: **{arousal_text}**")
+            # st.success(f"📉 Predicted Valence: **{valence_text}**")
+            # st.success(f"🐶 Predicted Emotion: **{emotion_text}**")
 
             arousal_scores.append(arousal_idx)
             valence_scores.append(valence_idx)
             emotion_labels.append(emotion_text)
 
+    if emotion_labels:
+        results_df = pd.DataFrame({
+            #"Chunk": list(range(len(emotion_labels))),
+            "Time Range": [f"{i*2}–{(i+1)*2} sec" for i in range(len(emotion_labels))],
+            "Arousal": [AROUSAL_CLASSES[val] for val in arousal_scores], 
+            "Valence": [VALENCE_CLASSES[val] for val in valence_scores],
+            "Emotion": emotion_labels
+        })
+        st.subheader("📋 Emotion prediction every 2 seconds")
+        st.dataframe(results_df)
 
-        
-        if emotion_labels:
-            st.subheader("📊 Emotion Over Time")
+        df = pd.DataFrame({
+            # "Chunk": list(range(1, len(chunked_audio)+1)),
+            #"Chunk": list(range(1, len(valence_scores)+1)),
+            #"Chunk": list(range(len(valence_scores))), 
+            "Time Range": [f"{i*2}–{(i+1)*2}s" for i in range(len(valence_scores))],
+            "Valence": valence_scores,
+            "Arousal": arousal_scores
+        })
+        df.set_index("Time Range", inplace=True)
 
-            df = pd.DataFrame({
-                # "Chunk": list(range(1, len(chunked_audio)+1)),
-                #"Chunk": list(range(1, len(valence_scores)+1)),
-                "Chunk": list(range(len(valence_scores))), 
-                "Valence": valence_scores,
-                "Arousal": arousal_scores
-            })
-            st.line_chart(df.set_index("Chunk"))
+        st.subheader("📊 Emotion Over Time")
+        st.line_chart(df)
+        st.caption("🔹 Arousal scale: 0 = Low, 1 = Medium, 2 = High")
+        st.caption("🔹 Valence scale: 0 = Negative, 1 = Neutral, 2 = Positive")
 
-            st.subheader("🌈 Emotion Over Time (Area Chart)")
-            st.area_chart(df.set_index("Chunk"))
+        st.subheader("🌈 Emotion Over Time (Area Chart)")
+        st.area_chart(df)
 
 
             # color_map = {
