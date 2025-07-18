@@ -202,6 +202,7 @@ Please give your suggestions.
 
 The output should be like
 Emotion: <Insert emotion>
+<Leave a blank line here>
 Sentence of suggestion
 Format the output as a sentence that doesn't look too LLM generated.
 """
@@ -212,7 +213,7 @@ def load_gemini_model():
     try:
         GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]
         genai.configure(api_key=GOOGLE_API_KEY)
-        model = genai.GenerativeModel('gemini-1.5-flash-latest')
+        model = genai.GenerativeModel('gemma-3-4b-it')
         st.success("Gemini API configured successfully.")
         return model
     except KeyError:
