@@ -213,7 +213,7 @@ def load_gemini_model():
     try:
         GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]
         genai.configure(api_key=GOOGLE_API_KEY)
-        model = genai.GenerativeModel('gemma-3-4b-it')
+        model = genai.GenerativeModel('gemini-2.5-flash-lite-preview-06-17')
         st.success("Gemini API configured successfully.")
         return model
     except KeyError:
