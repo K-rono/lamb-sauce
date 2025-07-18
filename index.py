@@ -43,7 +43,7 @@ def load_valence_model():
 valence_model = load_valence_model()
 
 
-emotion_labels = ['Aggressive', 'Alert', 'Excited', 'Frustrated', 'Happy', 'Neutral', 'Playful', 'Sigh', 'Whining']
+#emotion_labels = ['Aggressive', 'Alert', 'Excited', 'Frustrated', 'Happy', 'Neutral', 'Playful', 'Sigh', 'Whining']
 
 
 # class AudioProcessor(AudioProcessorBase):
@@ -290,6 +290,7 @@ def determine_emotion_from_text(arousal_text, valence_text):
 # from the previous code cell.
 
 uploaded_file = st.file_uploader("Upload a dog bark (.wav) file", type=["wav"])
+scaler_sequential = joblib.load('scaler_sequential.pkl')
 
 if uploaded_file:
     st.audio(uploaded_file)
