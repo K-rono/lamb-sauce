@@ -19,6 +19,7 @@ import pandas as pd
 import soundfile as sf
 import google.generativeai as genai # Import the Gemini library
 from collections import Counter # To find the most common emotion
+import plotly.express as px
 
 
 st.set_page_config(page_title="PawSound AI", layout="wide")
@@ -467,8 +468,8 @@ if uploaded_file:
                 valence_text = VALENCE_CLASSES[valence_idx]
                 emotion_text = determine_emotion_from_text(arousal_text, valence_text)
                 
-                arousal_scores.append(arousal_idx)
-                valence_scores.append(valence_idx)
+                arousal_scores.append(arousal_idx - 1)
+                valence_scores.append(valence_idx - 1)
                 emotion_labels.append(emotion_text)
             else:
                 st.warning(f"Skipping chunk {i+1} due to preprocessing error.")
@@ -484,31 +485,62 @@ if uploaded_file:
         results_df = pd.DataFrame({
             #"Chunk": list(range(len(emotion_labels))),
             "Time Range": [f"{i*2}–{(i+1)*2} sec" for i in range(len(emotion_labels))],
-            "Arousal": [AROUSAL_CLASSES[val] if isinstance(val, int) else val for val in arousal_scores], 
-            "Valence": [VALENCE_CLASSES[val] if isinstance(val, int) else val for val in valence_scores],
+            # "Arousal": [AROUSAL_CLASSES[val + 1] if isinstance(val, int) else val for val in arousal_scores], 
+            # "Valence": [VALENCE_CLASSES[val + 1] if isinstance(val, int) else val for val in valence_scores],
             "Emotion": emotion_labels
         })
         st.subheader("📋 Emotion prediction every 2 seconds")
         st.dataframe(results_df)
 
         # Create DataFrame for charts (using integer indices for plotting)
-        df_chart = pd.DataFrame({
-            # "Chunk": list(range(1, len(chunked_audio)+1)),
-            #"Chunk": list(range(1, len(valence_scores)+1)),
-            #"Chunk": list(range(len(valence_scores))), 
-            "Time Range": [f"{i*2}–{(i+1)*2}s" for i in range(len(valence_scores))],
-            "Valence": valence_scores,
-            "Arousal": arousal_scores
+        # df_chart = pd.DataFrame({
+        #     # "Chunk": list(range(1, len(chunked_audio)+1)),
+        #     #"Chunk": list(range(1, len(valence_scores)+1)),
+        #     #"Chunk": list(range(len(valence_scores))), 
+        #     "Time Range": [f"{i*2}–{(i+1)*2}s" for i in range(len(valence_scores))],
+        #     "Valence": valence_scores,
+        #     "Arousal": arousal_scores
+        # })
+        # df_chart.set_index("Time Range", inplace=True)
+
+        # st.subheader("📊 Emotion Over Time (Line Chart)")
+        # st.line_chart(df_chart)
+        # st.caption("🔹 Arousal scale: 0 = Low, 1 = Medium, 2 = High")
+        # st.caption("🔹 Valence scale: 0 = Negative, 1 = Neutral, 2 = Positive")
+
+
+
+
+
+        st.subheader("📋 Emotion Changes Over Time")
+        time_ranges = [f"{i*2}–{(i+1)*2}s" for i in range(len(emotion_labels))]
+        emotions = emotion_labels
+
+        emotion_df = pd.DataFrame({
+            "Time Range": time_ranges,
+            "Emotion": emotions
         })
-        df_chart.set_index("Time Range", inplace=True)
 
-        st.subheader("📊 Emotion Over Time (Line Chart)")
-        st.line_chart(df_chart)
-        st.caption("🔹 Arousal scale: 0 = Low, 1 = Medium, 2 = High")
-        st.caption("🔹 Valence scale: 0 = Negative, 1 = Neutral, 2 = Positive")
+        # Plot line chart with categorical Y-axis
+        fig = px.line(
+            emotion_df,
+            x="Time Range",
+            y="Emotion",
+            markers=True,
+            #title="🐶 Emotion Changes Over Time",
+        )
 
-        st.subheader("🌈 Emotion Over Time (Area Chart)")
-        st.area_chart(df_chart)
+        fig.update_layout(
+            yaxis_title="Emotion",
+            xaxis_title="Time Range",
+            xaxis_tickangle=0,
+            showlegend=False,
+            height=400
+        )
+
+        st.plotly_chart(fig, use_container_width=True)
+        # st.subheader("🌈 Emotion Over Time (Area Chart)")
+        # st.area_chart(df_chart)
 
 
         #             # color_map = {
