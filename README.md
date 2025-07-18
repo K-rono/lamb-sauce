@@ -58,7 +58,7 @@ brew install python@3.11
 
 # Create & activate
 # Replace the following below with your actual python installation path
-/opt/homebrew/bin/python3.12 -m venv venv
+/opt/homebrew/bin/python3.11 -m venv venv
 source venv/bin/activate
 
 #OR On Windows
